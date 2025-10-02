@@ -5,7 +5,7 @@ on:
       lifetime_minutes:
         description: "How long to keep the instance before destroy"
         required: true
-        default: "5"
+        default: "1"
 
 jobs:
   ec2-ephemeral:
