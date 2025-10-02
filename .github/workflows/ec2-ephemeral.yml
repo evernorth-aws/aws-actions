@@ -1,0 +1,60 @@
+name: EC2 Ephemeral Demo (Create -> Wait -> Destroy)
+on:
+  workflow_dispatch:
+    inputs:
+      lifetime_minutes:
+        description: "How long to keep the instance before destroy"
+        required: true
+        default: "5"
+
+jobs:
+  ec2-ephemeral:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Sanity check (no secret values printed)
+      - name: Sanity-check inputs
+        run: |
+          [[ -n "${{ secrets.AWS_ACCESS_KEY_ID }}" ]] || (echo "Missing AWS_ACCESS_KEY_ID secret" && exit 1)
+          [[ -n "${{ secrets.AWS_SECRET_ACCESS_KEY }}" ]] || (echo "Missing AWS_SECRET_ACCESS_KEY secret" && exit 1)
+          [[ -n "${{ vars.AWS_REGION }}" ]] || (echo "Missing AWS_REGION variable" && exit 1)
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: infra-ec2
+
+      - name: Terraform Apply (Create EC2)
+        run: terraform apply -auto-approve
+        working-directory: infra-ec2
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION }}
+
+      - name: Show Outputs
+        run: terraform output
+        working-directory: infra-ec2
+
+      - name: Keep instance alive for the requested minutes
+        run: |
+          echo "Sleeping for ${{ github.event.inputs.lifetime_minutes }} minute(s)..."
+          sleep $(( 60 * ${{ github.event.inputs.lifetime_minutes }} ))
+
+      - name: Terraform Destroy (Tear down EC2)
+        run: terraform destroy -auto-approve
+        working-directory: infra-ec2
+        env:
+          TF_VAR_aws_region: ${{ vars.AWS_REGION }}
